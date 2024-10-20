@@ -1,0 +1,12 @@
+Handwriting Recognition
+
+-CNN layers will handle the spatial features from the image (e.g., strokes and character shapes).
+-LSTM layers will handle the sequential information, which is essential for converting the spatial data into a sequence of characters or words.
+-CTC (Connectionist Temporal Classification) loss is commonly used for handwriting recognition tasks, as it allows training with unsegmented data (i.e., the model can predict character sequences without needing to know exact character positions).
+
+CNN + BiLSTM + CTC Model in Keras
+CNN Part: The CNN acts as a feature extractor that converts the 2D image of handwriting into a high-level feature map. We'll use several convolutional and pooling layers to reduce the spatial dimensions and extract meaningful features.
+
+LSTM Part: The LSTM layers will process the extracted features from the CNN and predict character sequences in the image.
+
+CTC Loss: Finally, the CTC loss function will allow the model to align predicted sequences with the ground truth sequences.
