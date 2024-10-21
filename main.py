@@ -1,73 +1,64 @@
-import tensorflow as tf
-from tensorflow import keras
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.layers import LSTM
-from keras.layers import Input
-from keras.layers import Conv2D
-from keras.layers import MaxPooling2D
-from keras.layers import Reshape
-from keras.layers import Bidirectional
-from keras.models import Model
-from keras.layers import BatchNormalization
-from keras import backend as K
+from consts import RECORDS_COUNT, char_list
+from model import Model1, predict_and_evaluate_model, visualize_predictions
+from utils import read_words_from_file, process_lines, process_image, encode_to_labels
+from keras.preprocessing.sequence import pad_sequences
 import numpy as np
+from keras.layers import Input
 
-# Initialize batch size (you can adjust this as needed)
-batch_size = 32
+file_path = 'words.txt'
+lines = read_words_from_file(file_path)
 
-# Define CTC loss function
-def ctc_loss(y_true, y_pred):
-    y_pred = y_pred[:, :, :]
-    input_length = np.ones((batch_size, 1)) * y_pred.shape[1]
-    label_length = np.ones((batch_size, 1)) * len(y_true[0])
-    loss = K.ctc_batch_cost(y_true, y_pred, input_length, label_length)
-    return loss
+result = process_lines(lines, RECORDS_COUNT, process_image, encode_to_labels)
 
-# Input size based on image dimensions (height, width, channels)
-img_height = 128
-img_width = 64
-num_channels = 1 # Grayscale images
-num_classes = 30 # Number of unique characters (you can adjust this based on the dataset)
+# Access the returned values
+train_data = result['train']
+valid_data = result['valid']
+max_label_len = result['max_label_len']
 
-# CNN Feature Extractor
-cnn_input = Input(shape=(img_height, img_width, num_channels))
+train_padded_label = pad_sequences(train_data["labels"],
+                                   maxlen=max_label_len,
+                                   padding='post',
+                                   value=len(char_list))
 
-x = Conv2D(32, (3, 3), padding="same", activation="relu")(cnn_input)
-x = MaxPooling2D(pool_size=(2, 2))(x)
+# Similarly, for validation data (if needed)
+valid_padded_label = pad_sequences(valid_data["labels"],
+                                   maxlen=max_label_len,
+                                   padding='post',
+                                   value=len(char_list))
 
-x = Conv2D(64, (3, 3), padding="same", activation="relu")(x)
-x = MaxPooling2D(pool_size=(2, 2))(x)
+train_images = np.asarray(train_data["images"])
+train_input_length = np.asarray(train_data["input_length"])
+train_label_length = np.asarray(train_data["label_length"])
 
-x = Conv2D(128, (3, 3), padding="same", activation="relu")(x)
-x = MaxPooling2D(pool_size=(2, 2))(x)
+valid_images = np.asarray(valid_data["images"])
+valid_input_length = np.asarray(valid_data["input_length"])
+valid_label_length = np.asarray(valid_data["label_length"])
 
-x = Conv2D(256, (3, 3), padding="same", activation="relu")(x)
-x = MaxPooling2D(pool_size=(2, 2))(x)
+act_model, outputs, inputs = Model1()
+act_model.summary()
 
-# Now, the output shape of x is (batch_size, new_height, new_width, num_filters)
-# Reshape for the LSTM input, the shape should be (batch_size, time_steps, features)
-# We'll flatten the spatial dimensions (height and width) into a sequence (time_steps)
-# time_steps will be the new_width, and features will be new_height * num_filters
-new_shape = (img_width // 16, (img_height // 16) * 256)  # new_height and new_width reduced by pooling
-x = Reshape(target_shape=new_shape)(x)
+the_labels = Input(name='the_labels', shape=[max_label_len], dtype='float32')
+input_length = Input(name='input_length', shape=[1], dtype='int64')
+label_length = Input(name='label_length', shape=[1], dtype='int64')
 
-# Add batch normalization for regularization
-x = BatchNormalization()(x)
+# history, trained_model = train_model(
+#     inputs=inputs,
+#     the_labels=the_labels,
+#     input_length=input_length,
+#     label_length=label_length,
+#     outputs=outputs,
+#     train_data=(train_images, train_padded_label, train_input_length, train_label_length),
+#     valid_data=(valid_images, valid_padded_label, valid_input_length, valid_label_length),
+#     batch_size=5,
+#     epochs=25,
+#     optimizer_name='sgd',
+#     RECORDS_COUNT=1000
+# )
 
-# LSTM Network for Sequence Modeling
-lstm_units = 256  # You can adjust the number of units here for complexity
-x = Bidirectional(LSTM(lstm_units, return_sequences=True))(x)
-x = Bidirectional(LSTM(lstm_units, return_sequences=True))(x)
+out, avg_jaro = predict_and_evaluate_model(act_model, './sgdo-30000r-25e-18074t-2007v.hdf5', valid_images, valid_data['original_text'], char_list)
 
-# Dense layer to classify characters (including blank character for CTC)
-x = Dense(num_classes + 1, activation="softmax")(x)
+visualize_predictions(act_model, valid_images, valid_data['original_text'], char_list, start_idx=2000, end_idx=2004)
 
-# Define the model
-model = Model(inputs=cnn_input, outputs=x)
+#plot_graph(history)
 
-# Compile with Adam optimizer and CTC loss
-model.compile(optimizer="adam", loss=ctc_loss)
-
-# Print model summary
-model.summary()
+#best_loss, best_acc, best_val_loss, best_val_acc = get_best_model_info(history)
