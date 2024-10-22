@@ -4,14 +4,17 @@ import numpy as np
 from consts import char_list
 
 
-def read_words_from_file(file_path):
+def read_words_from_file(file_path, start_line=1, end_lines=22539):
+    if end_lines > 115338:
+        end_lines = 115338
+        start_line = start_line + 18# check words doc to see why + 18...
     with open(file_path, 'r') as f:
-        contents = f.readlines()[18:22539]
+        contents = f.readlines()[start_line:end_lines]
     lines = [line.strip() for line in contents]
     return lines
 
 
-def process_image(img):
+def process_image(img): # preluat
     """
     Converts image to shape (32, 128, 1) & normalize
     """
@@ -43,26 +46,28 @@ def process_image(img):
 
     img = np.expand_dims(img, axis=2)
 
-    # Normalize
+    # normalize
     img = img / 255
 
     return img
 
 
 def encode_to_labels(txt):
-    # encoding each output word into digits
-    dig_lst = []
+    # encode cuvinte in cifre
+    dig = []
     for index, chara in enumerate(txt):
-        dig_lst.append(char_list.index(chara))
+        dig.append(char_list.index(chara))
 
-    return dig_lst
+    return dig
 
 
-def process_lines(lines, RECORDS_COUNT, process_image, encode_to_labels):
-    # Initialize variables to store processed data
+def process_lines(lines, process_image, encode_to_labels):
     train_images, train_labels, train_input_length, train_label_length, train_original_text = [], [], [], [], []
     valid_images, valid_labels, valid_input_length, valid_label_length, valid_original_text = [], [], [], [], []
     max_label_len = 0
+
+    # Calculate the split for training and validation
+    train_count = int(0.75 * len(lines))  # 75% for training
 
     for index, line in enumerate(lines):
         splits = line.split(' ')
@@ -75,7 +80,6 @@ def process_lines(lines, RECORDS_COUNT, process_image, encode_to_labels):
             splits_id = word_id.split('-')
             filepath = 'words/{}/{}-{}/{}.png'.format(splits_id[0], splits_id[0], splits_id[1], word_id)
 
-            # Process the image
             img = cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
             try:
                 img = process_image(img)
@@ -83,34 +87,28 @@ def process_lines(lines, RECORDS_COUNT, process_image, encode_to_labels):
                 print(f"Error processing image {filepath}: {e}")
                 continue
 
-            # Process the label
             try:
                 label = encode_to_labels(word)
             except Exception as e:
                 print(f"Error encoding label for word {word}: {e}")
                 continue
 
-            # Add data to the valid or train sets
-            if index % 10 == 0:
-                valid_images.append(img)
-                valid_labels.append(label)
-                valid_input_length.append(31)
-                valid_label_length.append(len(word))
-                valid_original_text.append(word)
-            else:
+            # Determine if the current index goes to training or validation
+            if index < train_count:
                 train_images.append(img)
                 train_labels.append(label)
                 train_input_length.append(31)
                 train_label_length.append(len(word))
                 train_original_text.append(word)
+            else:
+                valid_images.append(img)
+                valid_labels.append(label)
+                valid_input_length.append(31)
+                valid_label_length.append(len(word))
+                valid_original_text.append(word)
 
-            # Update maximum label length if necessary
             if len(word) > max_label_len:
                 max_label_len = len(word)
-
-        # Stop processing after reaching the record limit
-        if index >= RECORDS_COUNT:
-            break
 
     return {
         'train': {

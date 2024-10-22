@@ -1,12 +1,7 @@
-import tensorflow as tf
-from tensorflow import keras
-from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import LSTM
 from keras.layers import Input
 from keras.layers import Conv2D
-from keras.layers import MaxPooling2D
-from keras.layers import Reshape
 from keras.layers import Bidirectional
 from keras.models import Model
 from keras.layers import BatchNormalization
@@ -18,14 +13,15 @@ from consts import char_list
 import numpy as np
 import Levenshtein as lv
 import matplotlib.pyplot as plt
+from keras.models import load_model
 
 tf_keras_backend.set_image_data_format('channels_last')
 tf_keras_backend.image_data_format()
 
 
-def Model1():
-    # input with shape of height=32 and width=128
-    inputs = Input(shape=(32, 128, 1))
+def ModelCNNLSTM():
+    #shape of height=32 and width=128
+    inputs = Input(shape=(32, 128, 1))   #arhitectura modelului preluata
 
     # convolution layer with kernel size (3,3)
     conv_1 = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
@@ -52,13 +48,13 @@ def Model1():
     conv_7 = Conv2D(512, (2, 2), activation='relu')(pool_6)
 
     squeezed = Lambda(lambda x: tf_keras_backend.squeeze(x, 1))(conv_7)
+
     # bidirectional LSTM layers with units=128
     blstm_1 = Bidirectional(LSTM(256, return_sequences=True, dropout=0.2))(squeezed)
     blstm_2 = Bidirectional(LSTM(256, return_sequences=True, dropout=0.2))(blstm_1)
 
     outputs = Dense(len(char_list) + 1, activation='softmax')(blstm_2)
 
-    # model to be used at test time
     act_model = Model(inputs, outputs)
 
     return act_model, outputs, inputs
@@ -66,26 +62,23 @@ def Model1():
 
 def ctc_lambda_func(args):
     y_pred, labels, input_length, label_length = args
-
     return tf_keras_backend.ctc_batch_cost(labels, y_pred, input_length, label_length)
 
 
 def train_model(inputs, the_labels, input_length, label_length, outputs, train_data, valid_data, batch_size=5,
-                epochs=25, optimizer_name='sgd', RECORDS_COUNT=1000):
+                epochs=25, optimizer_name='sgd'):
     loss_out = Lambda(ctc_lambda_func, output_shape=(1,), name='ctc')([outputs, the_labels, input_length, label_length])
     model = Model(inputs=[inputs, the_labels, input_length, label_length], outputs=loss_out)
 
-    # Unpack training and validation data
+    # unpack training and validation data
     train_images, train_padded_label, train_input_length, train_label_length = train_data
     valid_images, valid_padded_label, valid_input_length, valid_label_length = valid_data
 
-    # Compile the model
     model.compile(loss={'ctc': lambda y_true, y_pred: y_pred}, optimizer=optimizer_name, metrics=['accuracy'])
 
     # Format file path for saving model checkpoints
-    filepath = "{}o-{}r-{}e-{}t-{}v.hdf5".format(
+    filepath = "{}o-{}e-{}t-{}v.hdf5".format(
         optimizer_name,
-        str(RECORDS_COUNT),
         str(epochs),
         str(train_images.shape[0]),
         str(valid_images.shape[0])
@@ -107,8 +100,65 @@ def train_model(inputs, the_labels, input_length, label_length, outputs, train_d
         callbacks=callbacks_list
     )
 
-    # Save the model after training
-    #model.save(filepath='./model3.h5', overwrite=False, include_optimizer=True)
+    #save the model after training
+    model.save(filepath='./model3.h5', overwrite=False, include_optimizer=True)
+
+    return history, model
+
+
+def reload_and_retrain(model_path, train_data, valid_data, batch_size=5, epochs=10):
+    """
+    Reload a previously saved model and retrain it on new data.
+
+    Args:
+        model_path (str): Path to the saved model file (e.g., './model3.h5').
+        train_data (tuple): A tuple containing training images, labels, input lengths, and label lengths.
+        valid_data (tuple): A tuple containing validation images, labels, input lengths, and label lengths.
+        batch_size (int): Number of samples per batch.
+        epochs (int): Number of training epochs.
+
+    Returns:
+        history: Training history containing the loss and accuracy.
+        model: The retrained model.
+    """
+
+    # Load the saved model
+    model = load_model(model_path, compile=False)
+
+    # Unpack the new training and validation data
+    train_images, train_padded_label, train_input_length, train_label_length = train_data
+    valid_images, valid_padded_label, valid_input_length, valid_label_length = valid_data
+
+    # Compile the model again with the same optimizer and loss (CTC loss in this case)
+    model.compile(loss={'ctc': lambda y_true, y_pred: y_pred}, optimizer=model.optimizer, metrics=['accuracy'])
+
+    # Define a new checkpoint for saving the best model after retraining
+    filepath = "{}-retrained-{}e-{}t-{}v.hdf5".format(
+        model.optimizer.__class__.__name__.lower(),
+        str(epochs),
+        str(train_images.shape[0]),
+        str(valid_images.shape[0])
+    )
+
+    # Save the best model during retraining
+    checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_accuracy', verbose=1, save_best_only=True, mode='auto')
+    callbacks_list = [checkpoint]
+
+    # Retrain the model on new data
+    history = model.fit(
+        x=[train_images, train_padded_label, train_input_length, train_label_length],
+        y=np.zeros(len(train_images)),  # Dummy target because CTC loss doesn't use y_true directly
+        batch_size=batch_size,
+        epochs=epochs,
+        validation_data=(
+            [valid_images, valid_padded_label, valid_input_length, valid_label_length], np.zeros(len(valid_images))
+        ),
+        verbose=1,
+        callbacks=callbacks_list
+    )
+
+    # Save the retrained model
+    model.save(filepath='./retrained_model.h5', overwrite=True, include_optimizer=True)
 
     return history, model
 
@@ -166,39 +216,3 @@ def visualize_predictions(act_model, valid_images, valid_original_text, char_lis
         plt.show()
 
         idx += 1
-
-
-def plot_graph(history):
-    epochs = range(1, len(history.history['loss']) + 1)
-
-    # Plot training and validation accuracy
-    plt.plot(epochs, history.history['accuracy'], 'b', label='Train Accuracy')
-    plt.plot(epochs, history.history['val_accuracy'], 'r', label='Validation Accuracy')
-    plt.xlabel('Epoch')
-    plt.legend()
-    plt.show()
-
-    # Plot training and validation loss
-    plt.plot(epochs, history.history['loss'], 'b', label='Train Loss')
-    plt.plot(epochs, history.history['val_loss'], 'r', label='Validation Loss')
-    plt.xlabel('Epoch')
-    plt.legend()
-    plt.show()
-
-
-def get_best_model_info(history):
-    # Get best model based on validation loss
-    minimum_val_loss = np.min(history.history['val_loss'])
-    best_model_index = np.where(history.history['val_loss'] == minimum_val_loss)[0][0]
-
-    best_loss = history.history['loss'][best_model_index]
-    best_acc = history.history['accuracy'][best_model_index]
-    best_val_loss = history.history['val_loss'][best_model_index]
-    best_val_acc = history.history['val_accuracy'][best_model_index]
-
-    print(f"Best Training Loss: {best_loss}")
-    print(f"Best Training Accuracy: {best_acc}")
-    print(f"Best Validation Loss: {best_val_loss}")
-    print(f"Best Validation Accuracy: {best_val_acc}")
-
-    return best_loss, best_acc, best_val_loss, best_val_acc
