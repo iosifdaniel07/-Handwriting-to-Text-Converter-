@@ -6,7 +6,7 @@ import numpy as np
 from keras.layers import Input
 
 file_path = 'words.txt'
-lines = read_words_from_file(file_path, start_line=3000, end_lines=5104)
+lines = read_words_from_file(file_path, start_line=4000, end_lines=6104)
 
 result = process_lines(lines, process_image, encode_to_labels)
 
@@ -53,25 +53,12 @@ label_length = Input(name='label_length', shape=[1], dtype='int64')
 #     optimizer_name='sgd'
 # )
 
-history, trained_model = reload_and_retrain(
-    inputs=inputs,
-    the_labels=the_labels,
-    input_length=input_length,
-    label_length=label_length,
-    outputs=outputs,
-    train_data=(train_images, train_padded_label, train_input_length, train_label_length),
-    valid_data=(valid_images, valid_padded_label, valid_input_length, valid_label_length),
-    batch_size=10,
-    epochs=10,
-    optimizer_name='sgd'
-)
-
 
 out, avg_jaro = predict_and_evaluate_model(act_model, './sgdo-30000r-25e-18074t-2007v.hdf5', valid_images, valid_data['original_text'], char_list)
 
 prediction = act_model.predict(valid_images[10:13])
 
-visualize_predictions(act_model, valid_images, valid_data['original_text'], char_list, start_idx=10, end_idx=13)
+visualize_predictions(act_model, valid_images, valid_data['original_text'], char_list, start_idx=1001, end_idx=1006)
 
 
 #first train 0.432 accuracy  antrenat pe primele 3000 date

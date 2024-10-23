@@ -106,63 +106,6 @@ def train_model(inputs, the_labels, input_length, label_length, outputs, train_d
     return history, model
 
 
-def reload_and_retrain(model_path, train_data, valid_data, batch_size=5, epochs=10):
-    """
-    Reload a previously saved model and retrain it on new data.
-
-    Args:
-        model_path (str): Path to the saved model file (e.g., './model3.h5').
-        train_data (tuple): A tuple containing training images, labels, input lengths, and label lengths.
-        valid_data (tuple): A tuple containing validation images, labels, input lengths, and label lengths.
-        batch_size (int): Number of samples per batch.
-        epochs (int): Number of training epochs.
-
-    Returns:
-        history: Training history containing the loss and accuracy.
-        model: The retrained model.
-    """
-
-    # Load the saved model
-    model = load_model(model_path, compile=False)
-
-    # Unpack the new training and validation data
-    train_images, train_padded_label, train_input_length, train_label_length = train_data
-    valid_images, valid_padded_label, valid_input_length, valid_label_length = valid_data
-
-    # Compile the model again with the same optimizer and loss (CTC loss in this case)
-    model.compile(loss={'ctc': lambda y_true, y_pred: y_pred}, optimizer=model.optimizer, metrics=['accuracy'])
-
-    # Define a new checkpoint for saving the best model after retraining
-    filepath = "{}-retrained-{}e-{}t-{}v.hdf5".format(
-        model.optimizer.__class__.__name__.lower(),
-        str(epochs),
-        str(train_images.shape[0]),
-        str(valid_images.shape[0])
-    )
-
-    # Save the best model during retraining
-    checkpoint = ModelCheckpoint(filepath=filepath, monitor='val_accuracy', verbose=1, save_best_only=True, mode='auto')
-    callbacks_list = [checkpoint]
-
-    # Retrain the model on new data
-    history = model.fit(
-        x=[train_images, train_padded_label, train_input_length, train_label_length],
-        y=np.zeros(len(train_images)),  # Dummy target because CTC loss doesn't use y_true directly
-        batch_size=batch_size,
-        epochs=epochs,
-        validation_data=(
-            [valid_images, valid_padded_label, valid_input_length, valid_label_length], np.zeros(len(valid_images))
-        ),
-        verbose=1,
-        callbacks=callbacks_list
-    )
-
-    # Save the retrained model
-    model.save(filepath='./retrained_model.h5', overwrite=True, include_optimizer=True)
-
-    return history, model
-
-
 def predict_and_evaluate_model(act_model, filepath, valid_images, valid_original_text, char_list):
     # Load the saved best model weights
     act_model.load_weights(filepath)
